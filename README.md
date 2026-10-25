@@ -11,7 +11,11 @@ python -m venv .venv
 
 ## Chạy
 
-Nhấp đúp `PassVault.bat`.
+Nhấp đúp `PassVault.bat`, hoặc tạo shortcut có icon ra Desktop:
+
+```
+powershell -ExecutionPolicy Bypass -File tools\create_shortcut.ps1
+```
 
 Lần đầu chạy, app hỏi tạo **mật khẩu chính**. Không có cách khôi phục nếu quên.
 

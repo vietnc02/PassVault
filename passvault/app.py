@@ -1,15 +1,19 @@
 """Tkinter desktop UI for PassVault."""
 
+import ctypes
 import queue
+import sys
 import time
 import tkinter as tk
 import webbrowser
+from pathlib import Path
 from tkinter import messagebox, simpledialog, ttk
 
 from . import ipc
 from .generator import generate_password
 from .vault import Vault, VaultError, WrongPassword, default_vault_path
 
+ICON_PATH = Path(__file__).resolve().parent.parent / "assets" / "passvault.ico"
 MIN_MASTER_LENGTH = 8
 CLIPBOARD_CLEAR_SECONDS = 15
 AUTO_LOCK_SECONDS = 5 * 60
@@ -84,6 +88,9 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("PassVault")
+        if ICON_PATH.exists():
+            # default= makes dialogs (add/edit, message boxes) use it too.
+            self.iconbitmap(default=str(ICON_PATH))
         self.geometry("820x480")
         self.minsize(640, 360)
         self.vault_path = default_vault_path()
@@ -426,6 +433,9 @@ def main():
         return
     except ipc.NotRunning:
         pass
+    if sys.platform == "win32":
+        # Own taskbar identity, so Windows shows PassVault's icon instead of Python's.
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("PassVault")
     App().mainloop()
 
 
