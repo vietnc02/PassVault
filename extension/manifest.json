@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "PassVault",
+  "version": "1.1.0",
+  "description": "Tự điền tài khoản và mật khẩu từ app PassVault trên máy.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAmyJ4rsQFKxEx7UEBaUFwef1aOXCPWHBqhRMZCZbVJFqSppl+OjBAUYuDFUkQwmAoL1VMzE32wYN2H5+yHxIfCKTA3K7u2f4CKpLHR6JDUqt9zguHcXodTQ+dIdBrQeJHqzQ24+iOho+lOm9bSkCwDuwXqKiiHxk20XfRJdt6ftVPqM1gdO9oy0t7uYZLkyK9q4yHABW7fsb0ihDBx48ryyiSWl0PjKWjoPmuf0kHcUyxhJkRXp/5CqH1lpNyRZ4f7lzKktdThfo+Gstbp0pu6QTwmLL9XtqQFVx9xzggETC4NcPfZBfq2a95BU0uWv4IcZNyKFblpEeJiGJpNUORvQIDAQAB",
+  "permissions": ["nativeMessaging", "activeTab", "scripting", "storage"],
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [
+    {
+      "matches": ["https://*/*", "http://*/*"],
+      "js": ["fill.js", "content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "PassVault (Ctrl+Shift+L)",
+    "default_popup": "popup.html"
+  },
+  "commands": {
+    "_execute_action": {
+      "suggested_key": { "default": "Ctrl+Shift+L" },
+      "description": "Mở PassVault để tự điền"
+    }
+  }
+}

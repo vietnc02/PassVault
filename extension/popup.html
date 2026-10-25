@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <title>PassVault</title>
+  <style>
+    :root {
+      --bg: #ffffff; --fg: #1d1d1f; --muted: #6b6b70; --line: #e4e4e8;
+      --hover: #f1f3f7; --accent: #2f6fde; --warn: #a33;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #1e1f22; --fg: #ececf0; --muted: #9a9aa2; --line: #34353a;
+        --hover: #2a2c31; --accent: #6b9bff; --warn: #f08a8a;
+      }
+    }
+    body { margin: 0; width: 320px; background: var(--bg); color: var(--fg);
+           font: 13px/1.4 "Segoe UI", system-ui, sans-serif; }
+    header { padding: 10px 12px; border-bottom: 1px solid var(--line); }
+    header strong { font-size: 14px; }
+    #site { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    ul { list-style: none; margin: 0; padding: 4px 0; max-height: 320px; overflow-y: auto; }
+    li button { all: unset; box-sizing: border-box; display: block; width: 100%; padding: 8px 12px; cursor: pointer; }
+    li button:hover, li button:focus-visible { background: var(--hover); }
+    .title { font-weight: 600; }
+    .user { color: var(--muted); font-size: 12px; }
+    #message { padding: 12px; }
+    #message.warn { color: var(--warn); }
+    #action { margin: 0 12px 12px; padding: 6px 12px; border: 0; border-radius: 6px;
+              background: var(--accent); color: #fff; font: inherit; cursor: pointer; }
+    footer { padding: 8px 12px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+    footer label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+  <header>
+    <strong>PassVault</strong>
+    <div id="site"></div>
+  </header>
+  <ul id="entries"></ul>
+  <div id="message" hidden></div>
+  <button id="action" hidden></button>
+  <footer>
+    <label><input type="checkbox" id="autofill"> Tự điền khi mở trang (khi chỉ có 1 tài khoản)</label>
+  </footer>
+  <script src="popup.js"></script>
+</body>
+</html>
