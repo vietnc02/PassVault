@@ -2,7 +2,14 @@
 
 Trình quản lý mật khẩu chạy trên máy, dữ liệu mã hóa và không gửi đi đâu.
 
-## Cài đặt (Windows, Python 3.10+)
+## Tải về (không cần Python)
+
+Vào [Releases](../../releases), tải `PassVault-x.y.z-windows.zip`, giải nén rồi chạy `install.bat`.
+Hướng dẫn chi tiết nằm trong file `HUONG-DAN.txt` trong file zip.
+
+Tự build bản đóng gói: `powershell -ExecutionPolicy Bypass -File packaging\build.ps1`
+
+## Cài đặt từ mã nguồn (Windows, Python 3.10+)
 
 ```
 python -m venv .venv

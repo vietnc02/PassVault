@@ -13,7 +13,8 @@ from . import ipc
 from .generator import generate_password
 from .vault import Vault, VaultError, WrongPassword, default_vault_path
 
-ICON_PATH = Path(__file__).resolve().parent.parent / "assets" / "passvault.ico"
+# In a PyInstaller build, bundled data lives under sys._MEIPASS.
+ICON_PATH = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent)) / "assets" / "passvault.ico"
 MIN_MASTER_LENGTH = 8
 CLIPBOARD_CLEAR_SECONDS = 15
 AUTO_LOCK_SECONDS = 5 * 60

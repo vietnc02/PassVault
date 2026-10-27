@@ -1,0 +1,25 @@
+PASSVAULT - HƯỚNG DẪN CÀI ĐẶT
+=============================
+
+1. Giải nén file zip ra một thư mục bất kỳ.
+2. Nhấp đúp install.bat.
+   - Nếu Windows hiện "Windows protected your PC": bấm "More info" rồi "Run anyway".
+     (App chưa có chữ ký số nên Windows cảnh báo; đây là bình thường.)
+3. Bật tự điền trên Chrome (một lần):
+   - Mở chrome://extensions, bật "Developer mode" (góc trên bên phải).
+   - Bấm "Load unpacked", chọn thư mục:
+     %LOCALAPPDATA%\Programs\PassVault\extension
+     (chọn thư mục "extension", KHÔNG mở vào thư mục con "icons")
+4. Mở PassVault từ shortcut trên Desktop.
+
+Sau khi cài xong có thể xóa thư mục giải nén.
+
+CHUYỂN MẬT KHẨU TỪ MÁY CŨ SANG
+------------------------------
+Copy file %APPDATA%\PassVault\vault.pvault ở máy cũ sang cùng vị trí ở máy mới
+(trước khi mở PassVault lần đầu), rồi mở khóa bằng mật khẩu chính cũ.
+
+GỠ CÀI ĐẶT
+----------
+Chạy uninstall.bat trong %LOCALAPPDATA%\Programs\PassVault.
+Kho mật khẩu được giữ lại ở %APPDATA%\PassVault.

@@ -32,17 +32,24 @@ def write_message(message: dict) -> None:
     sys.stdout.buffer.flush()
 
 
+def app_command() -> tuple[list, Path]:
+    if getattr(sys, "frozen", False):
+        # Packaged build: PassVault.exe sits next to this host executable.
+        exe_dir = Path(sys.executable).parent
+        return [str(exe_dir / "PassVault.exe")], exe_dir
+    return [str(PROJECT_DIR / ".venv" / "Scripts" / "pythonw.exe"), "-m", "passvault.app"], PROJECT_DIR
+
+
 def launch_app() -> None:
-    pythonw = PROJECT_DIR / ".venv" / "Scripts" / "pythonw.exe"
+    command, cwd = app_command()
     flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
-    args = dict(cwd=PROJECT_DIR, close_fds=True,
+    args = dict(cwd=cwd, close_fds=True,
                 stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
         # Break out of Chrome's job object so the app outlives this host process.
-        subprocess.Popen([str(pythonw), "-m", "passvault.app"],
-                         creationflags=flags | subprocess.CREATE_BREAKAWAY_FROM_JOB, **args)
+        subprocess.Popen(command, creationflags=flags | subprocess.CREATE_BREAKAWAY_FROM_JOB, **args)
     except OSError:
-        subprocess.Popen([str(pythonw), "-m", "passvault.app"], creationflags=flags, **args)
+        subprocess.Popen(command, creationflags=flags, **args)
 
 
 def handle(message: dict) -> dict:
