@@ -11,7 +11,7 @@ import webbrowser
 from pathlib import Path
 from tkinter import messagebox, simpledialog, ttk
 
-from . import autotype, ipc
+from . import autotype, ipc, settings
 from .generator import generate_password
 from .vault import Vault, VaultError, WrongPassword, default_vault_path
 
@@ -58,7 +58,7 @@ class EntryDialog(tk.Toplevel):
 
         ttk.Label(
             form, foreground="#777",
-            text=f"Tự gõ ({getattr(parent, 'hotkey_label', None) or 'phím tắt'}): "
+            text=f"Tự gõ ({parent.hotkey.label or 'phím tắt'}): "
                  "khớp khi tiêu đề cửa sổ chứa chữ ở trên.\n"
                  "Chuỗi dùng {USERNAME} {PASSWORD} {TAB} {ENTER}.",
         ).grid(row=6, column=1, sticky="w")
@@ -171,6 +171,86 @@ class AutoTypePicker(tk.Toplevel):
         self.app.start_autotype(self.hwnd, entry)
 
 
+class SettingsDialog(tk.Toplevel):
+    """Lets the user pick the Auto-Type hotkey by pressing it."""
+
+    def __init__(self, app):
+        super().__init__(app)
+        self.app = app
+        self.title("Cài đặt")
+        self.transient(app)
+        self.resizable(False, False)
+        self.capturing = False
+
+        box = ttk.Frame(self, padding=16)
+        box.pack(fill="both", expand=True)
+        ttk.Label(box, text="Phím tắt Tự gõ", font=("Segoe UI", 10, "bold")).grid(row=0, column=0, sticky="w")
+        ttk.Label(box, foreground="#666", wraplength=360, text=(
+            "Bấm vào ô tài khoản ở trang/app cần đăng nhập rồi nhấn phím này để PassVault gõ giúp."
+        )).grid(row=1, column=0, columnspan=3, sticky="w", pady=(2, 10))
+
+        self.current = tk.StringVar(value=app.hotkey.label or "(chưa có)")
+        ttk.Label(box, textvariable=self.current, font=("Segoe UI", 16, "bold")).grid(row=2, column=0, sticky="w")
+        self.change_button = ttk.Button(box, text="Đổi phím…", command=self._start_capture)
+        self.change_button.grid(row=2, column=1, padx=(12, 4))
+        ttk.Button(box, text="Mặc định", command=lambda: self._apply(*autotype.DEFAULT_HOTKEY)).grid(row=2, column=2)
+
+        self.message = tk.StringVar()
+        self.message_label = ttk.Label(box, textvariable=self.message, wraplength=360)
+        self.message_label.grid(row=3, column=0, columnspan=3, sticky="w", pady=(10, 0))
+        ttk.Button(box, text="Đóng", command=self.destroy).grid(row=4, column=2, sticky="e", pady=(14, 0))
+
+        self.bind("<KeyPress>", self._on_key)
+        self.grab_set()
+        self.focus_force()
+
+    def _say(self, text: str, error: bool = False):
+        self.message.set(text)
+        self.message_label.configure(foreground="#a33" if error else "#2a6b2a")
+
+    def _start_capture(self):
+        self.capturing = True
+        self.change_button.state(["disabled"])
+        self._say("Nhấn phím hoặc tổ hợp phím mới… (Esc để hủy)\n"
+                  "Nếu nhấn mà không thấy gì, phím đó đang bị app khác dùng.")
+        self.message_label.configure(foreground="#2f6fde")
+        self.focus_force()
+
+    def _stop_capture(self):
+        self.capturing = False
+        self.change_button.state(["!disabled"])
+
+    def _on_key(self, event):
+        if not self.capturing:
+            return None
+        vk = event.keycode  # on Windows, Tk reports the virtual-key code
+        if vk == 0x1B:  # Esc
+            self._stop_capture()
+            self._say("Đã hủy.")
+            return "break"
+        if vk in autotype.MODIFIER_VKS:
+            return "break"  # wait for the main key
+        mods = autotype.held_modifiers()
+        error = autotype.validate_hotkey(mods, vk)
+        if error:
+            self._say(error, error=True)
+            return "break"
+        self._stop_capture()
+        self._apply(mods, vk)
+        return "break"
+
+    def _apply(self, mods: int, vk: int):
+        name = autotype.format_hotkey(mods, vk)
+        if self.app.hotkey.set_hotkey(mods, vk):
+            settings.update(hotkey=[mods, vk])
+            self.current.set(name)
+            self._say(f"Đã đổi phím Tự gõ thành {name}.")
+            self.app._hotkey_warning = None
+            self.app.show_hints()
+        else:
+            self._say(f"{name} đang bị app khác dùng. Hãy chọn phím khác.", error=True)
+
+
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
@@ -189,18 +269,22 @@ class App(tk.Tk):
         for sequence in ("<Any-KeyPress>", "<Any-ButtonPress>", "<Motion>"):
             self.bind_all(sequence, self._touch, add="+")
         self.protocol("WM_DELETE_WINDOW", self._on_close)
-        self.after(5000, self._check_idle)
+        self._idle_job = self.after(5000, self._check_idle)
 
         # Requests from the Chrome extension arrive on a background thread;
         # anything that touches Tk is queued and run on the main thread.
         self._ui_queue = queue.Queue()
-        self.after(200, self._drain_ui_queue)
+        self._drain_job = self.after(200, self._drain_ui_queue)
         self.ipc = ipc.IpcServer(self._handle_ipc)
         self.ipc.start()
 
         self._pending_autotype = None  # (hwnd, title, time) from a hotkey pressed while locked
         self.hotkey = autotype.HotkeyListener(lambda: self._ui_queue.put(self._on_hotkey))
-        self.hotkey_label = self.hotkey.start()
+        preferred = tuple(settings.load().get("hotkey") or autotype.DEFAULT_HOTKEY)
+        registered = self.hotkey.start(preferred)
+        self._hotkey_warning = None
+        if registered != preferred:
+            self._hotkey_warning = f"Phím {autotype.format_hotkey(*preferred)} đang bị app khác dùng"
 
         self.container = ttk.Frame(self)
         self.container.pack(fill="both", expand=True)
@@ -265,6 +349,7 @@ class App(tk.Tk):
             ttk.Button(toolbar, text=text, command=command).pack(side="left", padx=(0, 4))
         ttk.Button(toolbar, text="Khóa", command=self.lock).pack(side="right")
         ttk.Button(toolbar, text="Đổi mật khẩu chính", command=self.change_master).pack(side="right", padx=(0, 4))
+        ttk.Button(toolbar, text="Cài đặt", command=lambda: SettingsDialog(self)).pack(side="right", padx=(0, 4))
 
         search_row = ttk.Frame(self.container, padding=(8, 0, 8, 4))
         search_row.pack(fill="x")
@@ -290,8 +375,7 @@ class App(tk.Tk):
 
         self.status = tk.StringVar()
         ttk.Label(self.container, textvariable=self.status, padding=(8, 4), foreground="#555").pack(fill="x")
-        hotkey = f"Tự gõ: {self.hotkey_label}" if self.hotkey_label else "Tự gõ: phím tắt đang bị app khác dùng"
-        self.set_status(f"Ctrl+B: copy tài khoản · Ctrl+C: copy mật khẩu · Nhấp đúp: sửa · {hotkey}")
+        self.show_hints()
 
         self.refresh()
         search.focus_set()
@@ -520,7 +604,7 @@ class App(tk.Tk):
                 self._ui_queue.get_nowait()()
             except queue.Empty:
                 break
-        self.after(200, self._drain_ui_queue)
+        self._drain_job = self.after(200, self._drain_ui_queue)
 
     def _bring_to_front(self):
         self.deiconify()
@@ -530,6 +614,15 @@ class App(tk.Tk):
         self.focus_force()
 
     # ---- housekeeping ----------------------------------------------------
+
+    def show_hints(self):
+        if self.hotkey.label:
+            hotkey = f"Tự gõ: {self.hotkey.label}"
+            if self._hotkey_warning:
+                hotkey += f" ({self._hotkey_warning}, đổi trong Cài đặt)"
+        else:
+            hotkey = "Tự gõ: chưa có phím tắt, chọn trong Cài đặt"
+        self.set_status(f"Ctrl+B: copy tài khoản · Ctrl+C: copy mật khẩu · Nhấp đúp: sửa · {hotkey}")
 
     def set_status(self, text: str):
         if hasattr(self, "status"):
@@ -544,12 +637,15 @@ class App(tk.Tk):
     def _check_idle(self):
         if self.vault is not None and time.monotonic() - self._last_activity > AUTO_LOCK_SECONDS:
             self.lock()
-        self.after(5000, self._check_idle)
+        self._idle_job = self.after(5000, self._check_idle)
 
     def _on_close(self):
         self._clear_clipboard()
         self.ipc.close()
         self.hotkey.stop()
+        for job in (self._idle_job, self._drain_job, self._clear_job):
+            if job:
+                self.after_cancel(job)
         self.destroy()
 
 

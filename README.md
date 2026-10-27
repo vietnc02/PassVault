@@ -60,7 +60,8 @@ App không tự bấm nút đăng nhập; bạn tự bấm.
 Dùng được trong mọi trình duyệt và app (Chrome, Edge, Cốc Cốc, Zalo...).
 
 1. Bấm vào ô tài khoản trên trang/app cần đăng nhập.
-2. Nhấn **Ctrl+Alt+A** (nếu phím này bị app khác chiếm, PassVault dùng **Ctrl+Alt+Shift+A**; xem thanh trạng thái).
+2. Nhấn **Ctrl+Alt+A**. Muốn dùng phím khác (ví dụ **F9**), bấm **Cài đặt** → **Đổi phím…** rồi nhấn phím mình muốn.
+   Phím đơn chỉ được dùng nếu là F1–F24, Pause hoặc Scroll Lock (để không chiếm phím gõ chữ).
 3. Chọn tài khoản trong bảng hiện ra, nhấn **Enter**. PassVault gõ tài khoản, Tab, mật khẩu.
 
 - Bảng chọn ưu tiên mục có **Tiêu đề cửa sổ** nằm trong tiêu đề cửa sổ đang mở, sau đó tới **Tên**, rồi tên miền.

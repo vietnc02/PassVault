@@ -18,6 +18,7 @@ TỰ GÕ (KHÔNG CẦN EXTENSION)
 ---------------------------
 Bấm vào ô tài khoản ở trang/app cần đăng nhập, nhấn Ctrl+Alt+A,
 chọn tài khoản rồi nhấn Enter. Dùng được ở mọi trình duyệt và app.
+Đổi phím tắt (ví dụ sang F9): trong PassVault bấm Cài đặt → Đổi phím…
 
 CHUYỂN MẬT KHẨU TỪ MÁY CŨ SANG
 ------------------------------

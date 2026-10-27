@@ -17,17 +17,24 @@ from .ipc import host_of
 DEFAULT_SEQUENCE = "{USERNAME}{TAB}{PASSWORD}"
 HOTKEY_ID = 0x5056  # arbitrary, unique within this process
 
-MOD_ALT, MOD_CONTROL, MOD_SHIFT, MOD_NOREPEAT = 0x1, 0x2, 0x4, 0x4000
+MOD_ALT, MOD_CONTROL, MOD_SHIFT, MOD_WIN, MOD_NOREPEAT = 0x1, 0x2, 0x4, 0x8, 0x4000
 VK_TAB, VK_RETURN, VK_SHIFT, VK_CONTROL, VK_MENU, VK_A = 0x09, 0x0D, 0x10, 0x11, 0x12, 0x41
-WM_HOTKEY, WM_QUIT = 0x0312, 0x0012
+VK_LWIN, VK_RWIN = 0x5B, 0x5C
+MODIFIER_VKS = {VK_SHIFT, VK_CONTROL, VK_MENU, VK_LWIN, VK_RWIN, 0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5}
+WM_HOTKEY, WM_QUIT, WM_APP_SET_HOTKEY = 0x0312, 0x0012, 0x8001
 INPUT_KEYBOARD, KEYEVENTF_KEYUP, KEYEVENTF_UNICODE = 1, 0x2, 0x4
 SW_RESTORE = 9
 
-# Tried in order; the first one not taken by another program wins.
-HOTKEYS = [
-    (MOD_CONTROL | MOD_ALT, "Ctrl+Alt+A"),
-    (MOD_CONTROL | MOD_ALT | MOD_SHIFT, "Ctrl+Alt+Shift+A"),
-]
+DEFAULT_HOTKEY = (MOD_CONTROL | MOD_ALT, VK_A)
+# Tried after the user's choice, in order, if that one is taken by another program.
+FALLBACK_HOTKEYS = [DEFAULT_HOTKEY, (MOD_CONTROL | MOD_ALT | MOD_SHIFT, VK_A)]
+# Keys that may be a hotkey on their own: they never produce text.
+SOLO_KEYS = set(range(0x70, 0x88)) | {0x13, 0x91}  # F1–F24, Pause, Scroll Lock
+KEY_NAMES = {
+    0x13: "Pause", 0x91: "Scroll Lock", 0x20: "Space", 0x2D: "Insert", 0x2E: "Delete",
+    0x24: "Home", 0x23: "End", 0x21: "Page Up", 0x22: "Page Down",
+    0x25: "←", 0x26: "↑", 0x27: "→", 0x28: "↓", 0x09: "Tab", 0x0D: "Enter", 0x08: "Backspace",
+}
 
 BROWSER_SUFFIXES = ("google chrome", "microsoft edge", "microsoft​ edge", "cốc cốc", "mozilla firefox", "brave", "opera")
 COMMON_HOST_PARTS = {"www", "com", "net", "org", "edu", "gov", "vn", "io", "app", "login", "accounts"}
@@ -66,6 +73,31 @@ def strip_browser_suffix(title: str) -> str:
         if head and any(tail.strip().lower().startswith(name) for name in BROWSER_SUFFIXES):
             return head
     return title
+
+
+def key_name(vk: int) -> str:
+    if 0x70 <= vk <= 0x87:
+        return f"F{vk - 0x6F}"
+    if 0x30 <= vk <= 0x39 or 0x41 <= vk <= 0x5A:
+        return chr(vk)
+    return KEY_NAMES.get(vk, f"Phím {vk}")
+
+
+def format_hotkey(mods: int, vk: int) -> str:
+    names = [name for bit, name in ((MOD_CONTROL, "Ctrl"), (MOD_ALT, "Alt"), (MOD_SHIFT, "Shift"), (MOD_WIN, "Win"))
+             if mods & bit]
+    return "+".join(names + [key_name(vk)])
+
+
+def validate_hotkey(mods: int, vk: int):
+    """Error message (Vietnamese) if this can't be a global hotkey, else None."""
+    if vk in MODIFIER_VKS:
+        return "Hãy nhấn thêm một phím khác ngoài Ctrl/Alt/Shift/Win."
+    if not mods & (MOD_CONTROL | MOD_ALT | MOD_WIN) and vk not in SOLO_KEYS:
+        # Taking a letter (or Shift+letter) globally would stop it being typed anywhere.
+        return (f"Không dùng được {format_hotkey(mods, vk)}: phím này dùng để gõ chữ. "
+                "Hãy chọn F1–F12, Pause, Scroll Lock, hoặc kết hợp với Ctrl/Alt.")
+    return None
 
 
 def match_entries(entries: list, window_title: str) -> list:
@@ -126,6 +158,7 @@ user32.SendInput.argtypes = [wt.UINT, ctypes.POINTER(INPUT), ctypes.c_int]
 user32.RegisterHotKey.argtypes = [wt.HWND, ctypes.c_int, wt.UINT, wt.UINT]
 user32.UnregisterHotKey.argtypes = [wt.HWND, ctypes.c_int]
 user32.GetMessageW.argtypes = [ctypes.POINTER(wt.MSG), wt.HWND, wt.UINT, wt.UINT]
+user32.PeekMessageW.argtypes = [ctypes.POINTER(wt.MSG), wt.HWND, wt.UINT, wt.UINT, wt.UINT]
 user32.PostThreadMessageW.argtypes = [wt.DWORD, wt.UINT, wt.WPARAM, wt.LPARAM]
 user32.GetAsyncKeyState.argtypes = [ctypes.c_int]
 user32.GetAsyncKeyState.restype = ctypes.c_short
@@ -177,6 +210,16 @@ def _press(vk: int):
     _send(_key_event(vk=vk), _key_event(vk=vk, flags=KEYEVENTF_KEYUP))
 
 
+def held_modifiers() -> int:
+    """MOD_* flags for the modifier keys held right now."""
+    mods = 0
+    for vks, bit in (((VK_CONTROL,), MOD_CONTROL), ((VK_MENU,), MOD_ALT),
+                     ((VK_SHIFT,), MOD_SHIFT), ((VK_LWIN, VK_RWIN), MOD_WIN)):
+        if any(user32.GetAsyncKeyState(vk) & 0x8000 for vk in vks):
+            mods |= bit
+    return mods
+
+
 def _wait_for_modifiers_released(timeout=3.0):
     # Typing while Ctrl/Alt from the hotkey are still held would send shortcuts.
     end = time.monotonic() + timeout
@@ -206,34 +249,74 @@ def perform(hwnd, sequence: str, username: str, password: str) -> None:
 
 
 class HotkeyListener:
-    """Registers the global hotkey on its own thread; `callback()` runs on that thread."""
+    """Owns the global hotkey on its own thread; `callback()` runs on that thread.
+
+    A hotkey belongs to the thread that registered it, so changes requested
+    from the UI thread are posted to this thread and applied there.
+    """
 
     def __init__(self, callback):
         self.callback = callback
-        self.label = None
+        self.current = None  # (mods, vk) actually registered
+        self._thread = None
         self._thread_id = None
         self._ready = threading.Event()
+        self._request = None
+        self._done = threading.Event()
+        self._ok = False
 
-    def start(self):
-        threading.Thread(target=self._run, daemon=True).start()
+    @property
+    def label(self):
+        return format_hotkey(*self.current) if self.current else None
+
+    def start(self, preferred=DEFAULT_HOTKEY):
+        """Register `preferred`, else the first free fallback. Returns what was registered, or None."""
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
         self._ready.wait(2)
-        return self.label
+        for candidate in [tuple(preferred)] + [h for h in FALLBACK_HOTKEYS if h != tuple(preferred)]:
+            if self.set_hotkey(*candidate):
+                return candidate
+        return None
+
+    def set_hotkey(self, mods: int, vk: int) -> bool:
+        """Switch to a new hotkey; keeps the old one if the new one is taken."""
+        if not self._thread_id:
+            return False
+        self._request = (mods, vk)
+        self._done.clear()
+        user32.PostThreadMessageW(self._thread_id, WM_APP_SET_HOTKEY, 0, 0)
+        return self._done.wait(2) and self._ok
+
+    def _apply_request(self):
+        mods, vk = self._request
+        old = self.current
+        if old:
+            user32.UnregisterHotKey(None, HOTKEY_ID)
+        self._ok = bool(user32.RegisterHotKey(None, HOTKEY_ID, mods | MOD_NOREPEAT, vk))
+        if self._ok:
+            self.current = (mods, vk)
+        elif old and user32.RegisterHotKey(None, HOTKEY_ID, old[0] | MOD_NOREPEAT, old[1]):
+            self.current = old
+        else:
+            self.current = None
+        self._done.set()
 
     def _run(self):
         self._thread_id = kernel32.GetCurrentThreadId()
-        for mods, label in HOTKEYS:
-            if user32.RegisterHotKey(None, HOTKEY_ID, mods | MOD_NOREPEAT, VK_A):
-                self.label = label
-                break
-        self._ready.set()
-        if self.label is None:
-            return
         msg = wt.MSG()
+        # Make sure this thread has a message queue before anyone posts to it.
+        user32.PeekMessageW(ctypes.byref(msg), None, 0, 0, 0)
+        self._ready.set()
         while user32.GetMessageW(ctypes.byref(msg), None, 0, 0) > 0:
             if msg.message == WM_HOTKEY and msg.wParam == HOTKEY_ID:
                 self.callback()
-        user32.UnregisterHotKey(None, HOTKEY_ID)
+            elif msg.message == WM_APP_SET_HOTKEY:
+                self._apply_request()
+        if self.current:
+            user32.UnregisterHotKey(None, HOTKEY_ID)
 
     def stop(self):
         if self._thread_id:
             user32.PostThreadMessageW(self._thread_id, WM_QUIT, 0, 0)
+            self._thread.join(2)
