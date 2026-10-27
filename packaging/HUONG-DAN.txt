@@ -14,6 +14,11 @@ PASSVAULT - HƯỚNG DẪN CÀI ĐẶT
 
 Sau khi cài xong có thể xóa thư mục giải nén.
 
+TỰ GÕ (KHÔNG CẦN EXTENSION)
+---------------------------
+Bấm vào ô tài khoản ở trang/app cần đăng nhập, nhấn Ctrl+Alt+A,
+chọn tài khoản rồi nhấn Enter. Dùng được ở mọi trình duyệt và app.
+
 CHUYỂN MẬT KHẨU TỪ MÁY CŨ SANG
 ------------------------------
 Copy file %APPDATA%\PassVault\vault.pvault ở máy cũ sang cùng vị trí ở máy mới

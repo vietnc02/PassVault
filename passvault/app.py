@@ -1,15 +1,17 @@
 """Tkinter desktop UI for PassVault."""
 
 import ctypes
+import os
 import queue
 import sys
+import threading
 import time
 import tkinter as tk
 import webbrowser
 from pathlib import Path
 from tkinter import messagebox, simpledialog, ttk
 
-from . import ipc
+from . import autotype, ipc
 from .generator import generate_password
 from .vault import Vault, VaultError, WrongPassword, default_vault_path
 
@@ -35,11 +37,13 @@ class EntryDialog(tk.Toplevel):
         form.pack(fill="both", expand=True)
 
         self.vars = {}
-        for row, (name, label) in enumerate(
-            [("title", "Tên"), ("username", "Tài khoản"), ("password", "Mật khẩu"), ("url", "Website / App")]
-        ):
+        defaults = {"autotype": autotype.DEFAULT_SEQUENCE}
+        for row, (name, label) in enumerate([
+            ("title", "Tên"), ("username", "Tài khoản"), ("password", "Mật khẩu"), ("url", "Website / App"),
+            ("window", "Tiêu đề cửa sổ"), ("autotype", "Chuỗi tự gõ"),
+        ]):
             ttk.Label(form, text=label).grid(row=row, column=0, sticky="w", pady=3)
-            var = tk.StringVar(value=entry.get(name, ""))
+            var = tk.StringVar(value=entry.get(name) or defaults.get(name, ""))
             widget = ttk.Entry(form, textvariable=var, width=40, show="•" if name == "password" else "")
             widget.grid(row=row, column=1, sticky="we", pady=3)
             self.vars[name] = var
@@ -52,13 +56,20 @@ class EntryDialog(tk.Toplevel):
         ttk.Checkbutton(tools, text="Hiện", variable=self.show_var, command=self._toggle_show).pack(side="left")
         ttk.Button(tools, text="Tạo", width=5, command=self._generate).pack(side="left", padx=(4, 0))
 
-        ttk.Label(form, text="Ghi chú").grid(row=4, column=0, sticky="nw", pady=3)
+        ttk.Label(
+            form, foreground="#777",
+            text=f"Tự gõ ({getattr(parent, 'hotkey_label', None) or 'phím tắt'}): "
+                 "khớp khi tiêu đề cửa sổ chứa chữ ở trên.\n"
+                 "Chuỗi dùng {USERNAME} {PASSWORD} {TAB} {ENTER}.",
+        ).grid(row=6, column=1, sticky="w")
+
+        ttk.Label(form, text="Ghi chú").grid(row=7, column=0, sticky="nw", pady=3)
         self.notes = tk.Text(form, width=40, height=4)
-        self.notes.grid(row=4, column=1, sticky="we", pady=3)
+        self.notes.grid(row=7, column=1, sticky="we", pady=3)
         self.notes.insert("1.0", entry.get("notes", ""))
 
         buttons = ttk.Frame(form)
-        buttons.grid(row=5, column=0, columnspan=3, sticky="e", pady=(10, 0))
+        buttons.grid(row=8, column=0, columnspan=3, sticky="e", pady=(10, 0))
         ttk.Button(buttons, text="Hủy", command=self.destroy).pack(side="right")
         ttk.Button(buttons, text="Lưu", command=self._save).pack(side="right", padx=(0, 6))
 
@@ -83,6 +94,81 @@ class EntryDialog(tk.Toplevel):
                        for name, var in self.vars.items()}
         self.result["notes"] = self.notes.get("1.0", "end-1c")
         self.destroy()
+
+
+class AutoTypePicker(tk.Toplevel):
+    """Shown on the Auto-Type hotkey: the user confirms which entry to type."""
+
+    def __init__(self, app, hwnd, window_title: str):
+        super().__init__(app)
+        self.app, self.hwnd = app, hwnd
+        self.title("PassVault – Tự gõ")
+        self.resizable(False, False)
+        self.attributes("-topmost", True)
+        self.matches = autotype.match_entries(app.vault.entries, window_title)
+        self.shown = []
+
+        box = ttk.Frame(self, padding=10)
+        box.pack(fill="both", expand=True)
+        ttk.Label(box, text=f"Gõ vào: {window_title or '(cửa sổ không có tiêu đề)'}", wraplength=400).pack(anchor="w")
+        self.hint = tk.StringVar()
+        ttk.Label(box, textvariable=self.hint, foreground="#777").pack(anchor="w")
+        self.query = tk.StringVar()
+        self.query.trace_add("write", lambda *_: self._refresh())
+        search = ttk.Entry(box, textvariable=self.query, width=55)
+        search.pack(fill="x", pady=(6, 4))
+        self.listbox = tk.Listbox(box, height=8, activestyle="dotbox", exportselection=False)
+        self.listbox.pack(fill="both", expand=True)
+        ttk.Label(box, foreground="#777", text="Enter: gõ · ↑↓: chọn · Esc: hủy").pack(anchor="w", pady=(4, 0))
+
+        search.bind("<Down>", lambda _e: self._move(1))
+        search.bind("<Up>", lambda _e: self._move(-1))
+        self.bind("<Return>", lambda _e: self._choose())
+        self.bind("<Escape>", lambda _e: self.destroy())
+        self.listbox.bind("<Double-1>", lambda _e: self._choose())
+        self._refresh()
+
+        self.update_idletasks()
+        x = (self.winfo_screenwidth() - self.winfo_reqwidth()) // 2
+        y = (self.winfo_screenheight() - self.winfo_reqheight()) // 3
+        self.geometry(f"+{x}+{y}")
+        self.lift()
+        self.focus_force()
+        search.focus_set()
+
+    def _refresh(self):
+        query = self.query.get()
+        if query.strip():
+            self.shown = sorted(self.app.vault.search(query), key=lambda e: e["title"].lower())
+            self.hint.set("Kết quả tìm kiếm:")
+        elif self.matches:
+            self.shown = self.matches
+            self.hint.set("Tài khoản khớp với cửa sổ này:")
+        else:
+            self.shown = sorted(self.app.vault.entries, key=lambda e: e["title"].lower())
+            self.hint.set("Không có tài khoản khớp — chọn trong danh sách hoặc gõ để tìm:")
+        self.listbox.delete(0, "end")
+        for entry in self.shown:
+            self.listbox.insert("end", f"{entry['title']}  —  {entry['username']}")
+        if self.shown:
+            self.listbox.selection_set(0)
+
+    def _move(self, step: int):
+        if not self.shown:
+            return
+        current = self.listbox.curselection()
+        index = max(0, min(len(self.shown) - 1, (current[0] if current else -1) + step))
+        self.listbox.selection_clear(0, "end")
+        self.listbox.selection_set(index)
+        self.listbox.see(index)
+
+    def _choose(self):
+        selection = self.listbox.curselection()
+        if not selection:
+            return
+        entry = self.shown[selection[0]]
+        self.destroy()
+        self.app.start_autotype(self.hwnd, entry)
 
 
 class App(tk.Tk):
@@ -111,6 +197,10 @@ class App(tk.Tk):
         self.after(200, self._drain_ui_queue)
         self.ipc = ipc.IpcServer(self._handle_ipc)
         self.ipc.start()
+
+        self._pending_autotype = None  # (hwnd, title, time) from a hotkey pressed while locked
+        self.hotkey = autotype.HotkeyListener(lambda: self._ui_queue.put(self._on_hotkey))
+        self.hotkey_label = self.hotkey.start()
 
         self.container = ttk.Frame(self)
         self.container.pack(fill="both", expand=True)
@@ -200,7 +290,8 @@ class App(tk.Tk):
 
         self.status = tk.StringVar()
         ttk.Label(self.container, textvariable=self.status, padding=(8, 4), foreground="#555").pack(fill="x")
-        self.set_status("Ctrl+B: copy tài khoản · Ctrl+C: copy mật khẩu · Nhấp đúp: sửa")
+        hotkey = f"Tự gõ: {self.hotkey_label}" if self.hotkey_label else "Tự gõ: phím tắt đang bị app khác dùng"
+        self.set_status(f"Ctrl+B: copy tài khoản · Ctrl+C: copy mật khẩu · Nhấp đúp: sửa · {hotkey}")
 
         self.refresh()
         search.focus_set()
@@ -235,6 +326,10 @@ class App(tk.Tk):
         finally:
             self.config(cursor="")
         self.show_main()
+        # Hotkey was pressed while locked: carry on to the picker if it was recent.
+        pending, self._pending_autotype = self._pending_autotype, None
+        if pending and time.monotonic() - pending[2] < 60:
+            AutoTypePicker(self, pending[0], pending[1])
 
     def lock(self):
         # Close any open add/edit dialog so it can't write to a locked vault.
@@ -389,6 +484,36 @@ class App(tk.Tk):
             return {"username": entry["username"], "password": entry["password"]}
         return {"error": "Yêu cầu không hợp lệ."}
 
+    # ---- auto-type -------------------------------------------------------
+
+    def _on_hotkey(self):
+        self._touch()
+        hwnd, title, pid = autotype.foreground_window()
+        if not hwnd or pid == os.getpid():
+            return  # nothing to type into, or it's PassVault itself
+        if self.vault is None:
+            self._pending_autotype = (hwnd, title, time.monotonic())
+            self._bring_to_front()
+            return
+        for child in self.winfo_children():
+            if isinstance(child, AutoTypePicker):
+                child.destroy()
+        AutoTypePicker(self, hwnd, title)
+
+    def start_autotype(self, hwnd, entry: dict):
+        sequence = entry.get("autotype") or autotype.DEFAULT_SEQUENCE
+        username, password, title = entry["username"], entry["password"], entry["title"]
+
+        def run():
+            try:
+                autotype.perform(hwnd, sequence, username, password)
+                message = f"Đã tự gõ “{title}”."
+            except autotype.AutoTypeError as exc:
+                message = f"Tự gõ không thành công: {exc}"
+            self._ui_queue.put(lambda: self.set_status(message))
+
+        threading.Thread(target=run, daemon=True).start()
+
     def _drain_ui_queue(self):
         while True:
             try:
@@ -424,6 +549,7 @@ class App(tk.Tk):
     def _on_close(self):
         self._clear_clipboard()
         self.ipc.close()
+        self.hotkey.stop()
         self.destroy()
 
 

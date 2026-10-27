@@ -23,7 +23,8 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 FORMAT_VERSION = 1
 DEFAULT_KDF = {"time_cost": 3, "memory_cost": 64 * 1024, "parallelism": 4}
-ENTRY_FIELDS = ("title", "username", "password", "url", "notes")
+# window/autotype are used by Auto-Type; entries saved before they existed simply lack them.
+ENTRY_FIELDS = ("title", "username", "password", "url", "notes", "window", "autotype")
 
 
 class VaultError(Exception):

@@ -55,6 +55,21 @@ Extension chỉ nhận mật khẩu của mục có tên miền khớp với tra
 Khi tự điền, extension không ghi đè ô bạn đã gõ và không điền vào ô bị ẩn.
 App không tự bấm nút đăng nhập; bạn tự bấm.
 
+## Tự gõ (Auto-Type), không cần extension
+
+Dùng được trong mọi trình duyệt và app (Chrome, Edge, Cốc Cốc, Zalo...).
+
+1. Bấm vào ô tài khoản trên trang/app cần đăng nhập.
+2. Nhấn **Ctrl+Alt+A** (nếu phím này bị app khác chiếm, PassVault dùng **Ctrl+Alt+Shift+A**; xem thanh trạng thái).
+3. Chọn tài khoản trong bảng hiện ra, nhấn **Enter**. PassVault gõ tài khoản, Tab, mật khẩu.
+
+- Bảng chọn ưu tiên mục có **Tiêu đề cửa sổ** nằm trong tiêu đề cửa sổ đang mở, sau đó tới **Tên**, rồi tên miền.
+- **Chuỗi tự gõ** mặc định là `{USERNAME}{TAB}{PASSWORD}`; thêm `{ENTER}` để tự bấm đăng nhập.
+- Ký tự được gửi dạng Unicode nên bộ gõ tiếng Việt (EVKey, Unikey) không làm sai mật khẩu.
+- Nếu bạn chuyển cửa sổ giữa chừng, PassVault dừng gõ ngay.
+- Không gõ được vào app chạy bằng quyền Administrator (Windows chặn).
+- PassVault luôn hỏi chọn tài khoản trước khi gõ, vì tiêu đề cửa sổ có thể bị trang giả mạo bắt chước.
+
 ## Phát triển
 
 ```
